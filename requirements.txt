@@ -1,0 +1,10 @@
+ccxt
+pandas
+numpy
+ta
+streamlit
+pyngrok
+plotly
+python-telegram-bot
+schedule
+nest-asyncio
