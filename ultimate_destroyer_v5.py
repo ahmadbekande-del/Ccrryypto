@@ -692,7 +692,7 @@ class MultiAgentVotingSystem:
             SentimentAgent(),
             RiskAgent(),
             MomentumAgent(),
-            MLAgent(),          # Agent 5 — XGBoost/LightGBM/RF مدرّب
+            Agent(),          # Agent 5 — XGBoost/LightGBM/RF مدرّب
         ]
         STATE['agents'] = {a.name: {'weight': a.weight, 'history': []} for a in self.agents}
 
@@ -1639,7 +1639,7 @@ ML_ENGINE = MLEngine()
 # ══════════════════════════════════════════════════════════════
 #  Agent 5 — XGBoost/LightGBM ML Agent (يستخدم MLEngine)
 # ══════════════════════════════════════════════════════════════
-class MLAgent(Agent):
+class Agent(Agent):
     """يستخدم XGBoost + LightGBM + RF مدربة على بيانات حقيقية"""
     def __init__(self):
         super().__init__('ML_Models', weight=2.0)  # وزن عالي لأنه مدرب
