@@ -61,8 +61,8 @@ _CACHE_TTL = 20 * 60
 #
 #  ضع قيمتيك في السطرين أدناه (بين علامات الاقتباس) ← هنا:
 
-TELEGRAM_BOT_TOKEN = ''   # ← ضع التوكن هنا   مثال: '7123456789:AAFxxxxxxxxxxxxxxxx'
-TELEGRAM_CHAT_ID   = ''   # ← ضع الـ Chat ID هنا  مثال: '-1001234567890'
+TELEGRAM_BOT_TOKEN = '8507619225:AAHgzL0CY6_oGeeVUuk48mqlrLpd3hxAk5A'   # ← ضع التوكن هنا   مثال: '7123456789:AAFxxxxxxxxxxxxxxxx'
+TELEGRAM_CHAT_ID   = '8475537568'   # ← ضع الـ Chat ID هنا  مثال: '-1001234567890'
 
 # ══════════════════════════════════════════════════════════════
 
