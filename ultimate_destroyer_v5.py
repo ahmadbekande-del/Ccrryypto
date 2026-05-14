@@ -60,8 +60,8 @@ _oi_lock = threading.Lock()
 # ══════════════════════════════════════════════════════════════
 #  🔔 TELEGRAM CONFIGURATION
 # ══════════════════════════════════════════════════════════════
-TELEGRAM_BOT_TOKEN = os.getenv('TG_TOKEN', '')
-TELEGRAM_CHAT_ID   = os.getenv('TG_CHAT', '')
+TELEGRAM_BOT_TOKEN = os.getenv('TG_TOKEN', '8609205844:AAF5SBOP87cxCIgn_hIYtn0CSKgiqcacs9o')
+TELEGRAM_CHAT_ID   = os.getenv('TG_CHAT', '8475537568')
 
 # Optional API security key (set ENV 'API_KEY' to enable)
 API_KEY = os.getenv('API_KEY', '')
