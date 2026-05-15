@@ -838,25 +838,30 @@ def check_macro_veto():
 
 def send_telegram(text,token=None,chat=None,retries=3):
     t=token or CONFIG['TG_TOKEN']; c=chat or CONFIG['TG_CHAT']
-    if not t or not c: return False
+    if not t or not c: 
+        log.error("Telegram Error: Missing Token or Chat ID")
+        return False
     url=f"https://api.telegram.org/bot{t}/sendMessage"
-    # Use HTML parse mode (safe)
-    payload={'chat_id':c,'text':text,'parse_mode':'HTML'}
+    payload={'chat_id':c, 'text':text, 'parse_mode':'HTML'}
+    log.info(f"Attempting to send message to chat {c}") # رسالة تتبع في السجلات
     for attempt in range(retries):
         try:
             r=requests.post(url,json=payload,timeout=30)
             result=r.json()
             if result.get('ok'):
-                with _state_lock:
-                    STATE['telegram_available']=True
+                log.info("Message sent successfully to Telegram.")
+                STATE['telegram_available']=True
                 return True
-            return False
-        except (requests.exceptions.Timeout,requests.exceptions.ConnectionError):
-            with _state_lock:
-                STATE['telegram_available']=False
+            else:
+                # طباعة الخطأ التفصيلي من التليجرام
+                log.error(f"Telegram API error: {result.get('description')}") 
+        except requests.exceptions.Timeout:
+            log.warning(f"Request timeout on attempt {attempt+1}")
+            STATE['telegram_available']=False
             time.sleep(5*(attempt+1))
-        except: return False
-    _msg_queue.put({'text':text,'time':datetime.now().isoformat()})
+        except Exception as e:
+            log.error(f"Unexpected error: {e}")
+            return False
     return False
 
 def format_signal_msg(sig):
