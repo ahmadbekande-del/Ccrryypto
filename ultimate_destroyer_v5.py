@@ -1513,8 +1513,11 @@ def _auto_start():
         STATE['running'] = True
     log.info("🚀 Auto-start: بدء تشغيل جميع الـ threads...")
     threading.Thread(target=scan_loop, daemon=True).start()
+    threading.Thread(target=tp_tracker_loop, daemon=True).start()
+    threading.Thread(target=whale_scan_loop, daemon=True).start()
+    threading.Thread(target=daily_report_loop, daemon=True).start()
     threading.Thread(target=keep_alive_loop, daemon=True).start()
-    # Train Pump Detector in background
+    # Pump Detector training
     threading.Thread(target=lambda: PUMP_DETECTOR.train_on_history(COINS[:30], None), daemon=True).start()
     if not ML_ENGINE.trained:
         log.info("🧠 بدء ML Training في الخلفية...")
