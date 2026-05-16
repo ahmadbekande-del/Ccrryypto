@@ -1448,6 +1448,47 @@ def api_pump_train():
     threading.Thread(target=lambda: PUMP_DETECTOR.train_on_history(COINS[:30], None), daemon=True).start()
     return jsonify({'ok': True, 'msg': 'بدأ تدريب نموذج كشف التلاعب'})
 
+@app.route('/api/whale/scan', methods=['POST'])
+@_api_key_required
+def api_whale_scan():
+    data = request.json or {}
+    coin = data.get('coin', 'BTC')
+    whales = detect_whales(coin, threshold_usd=data.get('threshold', 200000))
+    return jsonify({'ok': True, 'coin': coin, 'whales': whales})
+
+@app.route('/api/scalp/toggle', methods=['POST'])
+@_api_key_required
+def api_scalp_toggle():
+    STATE['scalp_mode'] = not STATE.get('scalp_mode', False)
+    if STATE['scalp_mode']:
+        threading.Thread(target=scalp_loop, daemon=True).start()
+        add_feed('system', '⚡', 'وضع Scalping فعّال', 'فحص كل دقيقتين')
+    else:
+        add_feed('system', '⏹', 'وضع Scalping متوقف', '')
+    return jsonify({'ok': True, 'scalp_mode': STATE['scalp_mode']})
+
+@app.route('/api/scalp/status')
+@_api_key_required
+def api_scalp_status():
+    return jsonify({'scalp_mode': STATE.get('scalp_mode', False)})
+
+@app.route('/api/backtest', methods=['POST'])
+@_api_key_required
+def api_backtest():
+    data = request.json or {}
+    symbol = data.get('symbol', 'BTC')
+    tf = data.get('tf', '1day')
+    result = run_backtest(symbol, tf)
+    if result:
+        return jsonify({'ok': True, 'result': result})
+    return jsonify({'ok': False, 'msg': 'بيانات غير كافية'})
+
+@app.route('/api/report/daily', methods=['POST'])
+@_api_key_required
+def api_daily_report():
+    threading.Thread(target=send_daily_report, daemon=True).start()
+    return jsonify({'ok': True, 'msg': 'جاري إرسال التقرير'})
+    
 # ════════════════════════════════════════════════════════════════
 # 11. Startup
 # ════════════════════════════════════════════════════════════════
