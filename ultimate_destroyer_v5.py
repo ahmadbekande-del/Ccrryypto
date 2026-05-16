@@ -1489,6 +1489,235 @@ def startup_hook():
         _startup_done = True
         _auto_start()
 
+# ===================== WHALE DETECTOR =====================
+WHALE_COINS = ['BTC','ETH','SOL','BNB','XRP','ADA','AVAX','DOGE','DOT','LINK','MATIC','UNI','ATOM','ARB','OP','INJ','SUI','NEAR','FTM','LTC']
+
+def detect_whales(symbol, threshold_usd=200000):
+    try:
+        r = requests.get(f"{KUCOIN}/market/orderbook/level2_100?symbol={symbol}-USDT", timeout=8)
+        d = r.json().get('data', {})
+        whales = []
+        for bid in d.get('bids', []):
+            p, s = float(bid[0]), float(bid[1])
+            v = p * s
+            if v >= threshold_usd:
+                whales.append({'side': 'BUY', 'price': p, 'size': s, 'value': v})
+        for ask in d.get('asks', []):
+            p, s = float(ask[0]), float(ask[1])
+            v = p * s
+            if v >= threshold_usd:
+                whales.append({'side': 'SELL', 'price': p, 'size': s, 'value': v})
+        return sorted(whales, key=lambda x: x['value'], reverse=True)[:5]
+    except:
+        return []
+
+def whale_scan_loop():
+    time.sleep(30)
+    while STATE['running']:
+        try:
+            for coin in WHALE_COINS:
+                if not STATE['running']:
+                    break
+                whales = detect_whales(coin, threshold_usd=500000)
+                buy_whales = [w for w in whales if w['side'] == 'BUY']
+                if buy_whales:
+                    total_buy = sum(w['value'] for w in buy_whales)
+                    msg = (f"🐋 <b>حوت شراء — {coin}/USDT</b>\n💰 قيمة: ${total_buy:,.0f}\n"
+                           f"📊 أكبر: ${buy_whales[0]['value']:,.0f} @ ${buy_whales[0]['price']:.4f}\n"
+                           f"⏰ {datetime.now().strftime('%H:%M:%S')}")
+                    add_feed('hot', '🐋', f'حوت شراء {coin}', f'${total_buy:,.0f}')
+                    send_telegram(msg)
+                time.sleep(1)
+        except Exception as e:
+            log.debug(f"Whale scan error: {e}")
+        time.sleep(300)
+
+# ===================== TP TRACKER =====================
+def tp_tracker_loop():
+    time.sleep(60)
+    notified = set()
+    while STATE['running']:
+        try:
+            with _signals_lock:
+                active = [s for s in STATE['signals'] if s['type'] in ('HOT', 'WARM')]
+            for sig in active:
+                key = f"{sig['coin']}_{sig['timestamp']}"
+                if key in notified:
+                    continue
+                ticker = get_ticker(sig['coin'])
+                price_now = float(ticker.get('last', 0))
+                if price_now == 0:
+                    continue
+                pnl_pct = (price_now - sig['price']) / sig['price'] * 100
+                if price_now >= sig['target']:
+                    send_telegram(f"✅ <b>تحقق الهدف! — {sig['coin']}/USDT</b>\n🎯 دخول: ${sig['price']:.4f} → الآن: ${price_now:.4f}\n💰 <b>الربح: +{pnl_pct:.2f}%</b>")
+                    add_feed('hot', '✅', f'هدف {sig["coin"]} تحقق!', f'+{pnl_pct:.2f}%')
+                    notified.add(key)
+                    with _state_lock:
+                        STATE['performance']['win'] += 1
+                        STATE['performance']['total'] += 1
+                    VOTING_SYSTEM.update_weights(sig['coin'], True)
+                elif price_now <= sig['stop']:
+                    send_telegram(f"🛑 <b>وصل الوقف — {sig['coin']}/USDT</b>\n❌ دخول: ${sig['price']:.4f} → الآن: ${price_now:.4f}\n📉 <b>الخسارة: {pnl_pct:.2f}%</b>")
+                    add_feed('system', '🛑', f'وقف {sig["coin"]}', f'{pnl_pct:.2f}%')
+                    notified.add(key)
+                    with _state_lock:
+                        STATE['performance']['loss'] += 1
+                        STATE['performance']['total'] += 1
+                    VOTING_SYSTEM.update_weights(sig['coin'], False)
+        except Exception as e:
+            log.debug(f"TP tracker error: {e}")
+        time.sleep(60)
+
+# ===================== DAILY REPORT =====================
+def send_daily_report():
+    with _signals_lock:
+        hot_sigs = sorted([s for s in STATE['signals'] if s['type'] == 'HOT'], key=lambda x: x['score'], reverse=True)[:5]
+    with _state_lock:
+        p = STATE['performance']
+        btc = STATE['market'].get('btc', 0)
+        btc_chg = STATE['market'].get('btc_chg', 0)
+    wr = round(p['win'] / p['total'] * 100, 1) if p['total'] > 0 else 0
+    lines = [
+        f"☀️ <b>تقرير الصباح — Destroyer V7</b>",
+        f"📅 {datetime.now().strftime('%Y-%m-%d')}",
+        "━━━━━━━━━━━━━━━━━━",
+        f"₿ BTC: ${btc:,.0f} ({'+' if btc_chg > 0 else ''}{btc_chg:.2f}%)",
+        f"📊 Win Rate: {wr}% | ✅{p['win']} ❌{p['loss']}",
+        "",
+        "🔥 <b>أفضل 5 فرص الآن:</b>"
+    ]
+    for i, s in enumerate(hot_sigs, 1):
+        lines.append(f"{i}. <b>{s['coin']}</b> — Score:{s['score']} | +{s['change24h']}%")
+    if not hot_sigs:
+        lines.append("لا توجد إشارات HOT حالياً")
+    with _signals_lock:
+        hot_count = sum(1 for s in STATE['signals'] if s['type'] == 'HOT')
+        warm_count = sum(1 for s in STATE['signals'] if s['type'] == 'WARM')
+    lines += [
+        "",
+        f"🔴 HOT: {hot_count}",
+        f"🟡 WARM: {warm_count}",
+        "━━━━━━━━━━━━━━━━━━",
+        "<i>Destroyer V7 | تحليل فني + ذكاء اصطناعي</i> ⚠️"
+    ]
+    send_telegram('\n'.join(lines))
+    add_feed('system', '☀️', 'تم إرسال التقرير اليومي', '')
+
+def daily_report_loop():
+    time.sleep(120)
+    while STATE['running']:
+        now = datetime.now()
+        target_hour = 8
+        next_run = now.replace(hour=target_hour, minute=0, second=0) + (timedelta(days=1) if now.hour >= target_hour else timedelta(0))
+        wait_sec = (next_run - now).total_seconds()
+        time.sleep(wait_sec)
+        try:
+            send_daily_report()
+        except Exception as e:
+            log.error(f"Daily report error: {e}")
+
+# ===================== SCALPING MODE =====================
+SCALP_COINS = ['BTC','ETH','SOL','BNB','XRP','ADA','AVAX','DOGE','DOT','LINK','MATIC','ARB','OP','INJ','SUI','NEAR','APT','TIA','WIF','PEPE']
+
+def scalp_loop():
+    time.sleep(90)
+    while STATE.get('scalp_mode', False):
+        try:
+            for coin in SCALP_COINS:
+                if not STATE.get('scalp_mode'):
+                    break
+                df5 = get_klines(coin, '5min', 100)
+                df15 = get_klines(coin, '15min', 60)
+                if df5 is None or df15 is None:
+                    continue
+                score = 0
+                signals = []
+                sq5, mom5 = calc_squeeze(df5)
+                if sq5 and mom5 > 0:
+                    score += 2.5
+                    signals.append('💥 Squeeze 5m')
+                sq15, mom15 = calc_squeeze(df15)
+                if sq15 and mom15 > 0:
+                    score += 2.0
+                    signals.append('💥 Squeeze 15m')
+                rsi5 = calc_rsi(df5)
+                if 55 < rsi5 < 80:
+                    score += 1.0
+                    signals.append(f'RSI {rsi5:.0f}')
+                vol_avg = df5['volume'].tail(20).mean()
+                vol_now = df5['volume'].iloc[-1]
+                if vol_now > vol_avg * 2.5:
+                    score += 1.5
+                    signals.append(f'📊 حجم ×{vol_now/vol_avg:.1f}')
+                _, _, hist = calc_macd(df5)
+                if hist > 0:
+                    score += 0.8
+                    signals.append('MACD+')
+                cvd_s, _ = calc_cvd(df5)
+                if cvd_s:
+                    score += 1.2
+                    signals.append('CVD Surge')
+                if score >= 5:
+                    ticker = get_ticker(coin)
+                    price = float(ticker.get('last', 0))
+                    chg = float(ticker.get('changeRate', 0)) * 100
+                    msg = (f"⚡ <b>SCALP — {coin}/USDT</b>\n💵 ${price:.4f} | {'+' if chg > 0 else ''}{chg:.2f}%\n"
+                           f"🧠 Score: {score:.1f}\n✅ {' | '.join(signals[:4])}\n⚡ <i>وضع Scalping — إطار 5-15 دقيقة</i>")
+                    send_telegram(msg)
+                    add_feed('hot', '⚡', f'SCALP: {coin}', f'Score:{score:.1f}')
+                time.sleep(0.5)
+        except Exception as e:
+            log.error(f"Scalp loop error: {e}")
+        time.sleep(120)
+
+# ===================== BACKTESTING =====================
+def run_backtest(symbol, tf='1day', periods=90):
+    df = get_klines(symbol, tf, periods + 50)
+    if df is None or len(df) < periods:
+        return None
+    trades = []
+    for i in range(50, len(df) - 5):
+        chunk = df.iloc[:i].copy()
+        try:
+            rsi = calc_rsi(chunk)
+            sq, sq_mom = calc_squeeze(chunk)
+            _, _, hist = calc_macd(chunk)
+            obv_bull, _ = calc_obv(chunk)
+            score = 0
+            if sq and sq_mom > 0:
+                score += 3
+            if rsi > 55:
+                score += 1
+            if hist > 0:
+                score += 1
+            if obv_bull:
+                score += 1
+            if score >= 4:
+                entry = df['close'].iloc[i]
+                atr = calc_atr(chunk)
+                target = entry + 2 * atr
+                stop = entry - 1 * atr
+                future = df['close'].iloc[i+1:i+6]
+                hit_tp = any(future >= target)
+                hit_sl = any(future <= stop)
+                if hit_tp and not hit_sl:
+                    trades.append({'result': 'WIN', 'pnl': (target - entry) / entry * 100})
+                elif hit_sl:
+                    trades.append({'result': 'LOSS', 'pnl': (stop - entry) / entry * 100})
+        except:
+            continue
+    if not trades:
+        return None
+    wins = sum(1 for t in trades if t['result'] == 'WIN')
+    total = len(trades)
+    return {
+        'symbol': symbol, 'tf': tf, 'total': total, 'wins': wins, 'losses': total - wins,
+        'win_rate': round(wins / total * 100, 1),
+        'avg_pnl': round(sum(t['pnl'] for t in trades) / total, 2),
+        'periods': periods
+    }
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
     log.info('━' * 50)
